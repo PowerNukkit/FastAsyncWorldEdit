@@ -5,9 +5,6 @@ import com.boydti.fawe.FaweCache;
 import com.boydti.fawe.beta.IBatchProcessor;
 import com.boydti.fawe.beta.IQueueChunk;
 import com.boydti.fawe.beta.IQueueExtent;
-import com.boydti.fawe.beta.implementation.lighting.NMSRelighter;
-import com.boydti.fawe.beta.implementation.lighting.NullRelighter;
-import com.boydti.fawe.beta.implementation.lighting.Relighter;
 import com.boydti.fawe.beta.implementation.processors.LimitProcessor;
 import com.boydti.fawe.beta.implementation.queue.ParallelQueueExtent;
 import com.boydti.fawe.config.Settings;
@@ -319,7 +316,7 @@ public class EditSessionBuilder {
             if (combineStages == null) {
                 combineStages =
                         // If it's enabled in the settings
-                        Settings.IMP.HISTORY.COMBINE_STAGES
+                        Settings.IMP.HISTORY.POST_PROCESS
                                 // If fast placement is disabled, it's slower to perform a copy on each chunk
                                 && this.limit.FAST_PLACEMENT
                                 // If the edit uses items from the inventory we can't use a delayed task

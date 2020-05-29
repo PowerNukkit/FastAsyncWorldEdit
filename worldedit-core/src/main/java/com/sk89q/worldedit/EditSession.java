@@ -1026,7 +1026,7 @@ public class EditSession extends PassthroughExtent implements AutoCloseable {
         limit.set(originalLimit);
         // Enqueue it
         if (getChangeSet() != null) {
-            if (Settings.IMP.HISTORY.COMBINE_STAGES) {
+            if (Settings.IMP.HISTORY.POST_PROCESS) {
                 ((AbstractChangeSet) getChangeSet()).closeAsync();
             } else {
                 try {

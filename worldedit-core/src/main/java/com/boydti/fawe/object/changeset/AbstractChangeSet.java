@@ -1,14 +1,12 @@
 package com.boydti.fawe.object.changeset;
 
-import static org.slf4j.LoggerFactory.getLogger;
-
 import com.boydti.fawe.Fawe;
-import com.boydti.fawe.FaweAPI;
 import com.boydti.fawe.FaweCache;
 import com.boydti.fawe.beta.IBatchProcessor;
 import com.boydti.fawe.beta.IChunk;
 import com.boydti.fawe.beta.IChunkGet;
 import com.boydti.fawe.beta.IChunkSet;
+import com.boydti.fawe.config.Settings;
 import com.boydti.fawe.object.HistoryExtent;
 import com.boydti.fawe.util.EditSessionBuilder;
 import com.boydti.fawe.util.MainUtil;
@@ -32,7 +30,6 @@ import com.sk89q.worldedit.world.block.BaseBlock;
 import com.sk89q.worldedit.world.block.BlockID;
 import com.sk89q.worldedit.world.block.BlockState;
 
-import java.io.Closeable;
 import java.io.IOException;
 import java.util.Iterator;
 import java.util.Map;
@@ -41,14 +38,19 @@ import java.util.UUID;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import static org.slf4j.LoggerFactory.getLogger;
+
 public abstract class AbstractChangeSet implements ChangeSet, IBatchProcessor {
 
     private final World world;
     protected AtomicInteger waitingCombined = new AtomicInteger(0);
     protected AtomicInteger waitingAsync = new AtomicInteger(0);
-    protected boolean closed;
-    
+    private final boolean waitForWrite;
+    private boolean closedAsync = false;
+    private boolean closed = false;
+
     public AbstractChangeSet(World world) {
+        this.waitForWrite = !Settings.IMP.EXPERIMENTAL.DO_NOT_WAIT_FOR_HISTORY;
         this.world = world;
     }
 
@@ -57,18 +59,20 @@ public abstract class AbstractChangeSet implements ChangeSet, IBatchProcessor {
     }
 
     public void closeAsync() {
-        if (closed) return;
-        closed = true;
+        if (closedAsync) return;
+        closedAsync = true;
         waitingAsync.incrementAndGet();
-        TaskManager.IMP.async(() -> {
-            waitingAsync.decrementAndGet();
-            synchronized (waitingAsync) {
-                waitingAsync.notifyAll();
-            }
-            try {
-                close();
-            } catch (IOException e) {
-                e.printStackTrace();
+        TaskManager.IMP.async(new Runnable() {
+            @Override public void run() {
+                waitingAsync.decrementAndGet();
+                synchronized (waitingAsync) {
+                    waitingAsync.notifyAll();
+                }
+                try {
+                    close();
+                } catch (IOException e) {
+                    e.printStackTrace();
+                }
             }
         });
     }
@@ -95,10 +99,7 @@ public abstract class AbstractChangeSet implements ChangeSet, IBatchProcessor {
 
     @Override
     public void close() throws IOException {
-        if (!closed) {
-            closed = true;
-            flush();
-        }
+        flush();
     }
 
     public abstract void add(int x, int y, int z, int combinedFrom, int combinedTo);
@@ -119,85 +120,98 @@ public abstract class AbstractChangeSet implements ChangeSet, IBatchProcessor {
     }
 
     @Override
-    public synchronized IChunkSet processSet(IChunk chunk, IChunkGet get, IChunkSet set) {
-        int bx = chunk.getX() << 4;
-        int bz = chunk.getZ() << 4;
+    public IChunkSet processSet(final IChunk chunk, final IChunkGet get, final IChunkSet set) {
+        Runnable run = new Runnable() {
+            @Override public void run() {
+                synchronized (AbstractChangeSet.this) {
+                    int bx = chunk.getX() << 4;
+                    int bz = chunk.getZ() << 4;
 
-        Map<BlockVector3, CompoundTag> tilesFrom = get.getTiles();
-        Map<BlockVector3, CompoundTag> tilesTo = set.getTiles();
-        if (!tilesFrom.isEmpty()) {
-            for (Map.Entry<BlockVector3, CompoundTag> entry : tilesFrom.entrySet()) {
-                BlockVector3 pos = entry.getKey();
-                BlockState fromBlock = get.getBlock(pos.getX() & 15, pos.getY(), pos.getZ() & 15);
-                BlockState toBlock = set.getBlock(pos.getX() & 15, pos.getY(), pos.getZ() & 15);
-                if (fromBlock != toBlock || tilesTo.containsKey(pos)) {
-                    addTileRemove(entry.getValue());
-                }
-            }
-        }
-        if (!tilesTo.isEmpty()) {
-            for (Map.Entry<BlockVector3, CompoundTag> entry : tilesTo.entrySet()) {
-                addTileCreate(entry.getValue());
-            }
-        }
-        Set<UUID> entRemoves = set.getEntityRemoves();
-        if (!entRemoves.isEmpty()) {
-            for (UUID uuid : entRemoves) {
-                CompoundTag found = get.getEntity(uuid);
-                if (found != null) {
-                    addEntityRemove(found);
-                }
-            }
-        }
-        Set<CompoundTag> ents = set.getEntities();
-        if (!ents.isEmpty()) {
-            for (CompoundTag tag : ents) {
-                addEntityCreate(tag);
-            }
-        }
-        for (int layer = 0; layer < 16; layer++) {
-            if (!set.hasSection(layer)) continue;
-            // add each block and tile
-            char[] blocksGet = get.load(layer);
-            if (blocksGet == null) {
-                blocksGet = FaweCache.IMP.EMPTY_CHAR_4096;
-            }
-            char[] blocksSet = set.load(layer);
-
-            int by = layer << 4;
-            for (int y = 0, index = 0; y < 16; y++) {
-                int yy = y + by;
-                for (int z = 0; z < 16; z++) {
-                    int zz = z + bz;
-                    for (int x = 0; x < 16; x++, index++) {
-                        int xx = bx + x;
-                        int combinedFrom = blocksGet[index];
-                        if (combinedFrom == 0) {
-                            combinedFrom = BlockID.AIR;
+                    Map<BlockVector3, CompoundTag> tilesFrom = get.getTiles();
+                    Map<BlockVector3, CompoundTag> tilesTo = set.getTiles();
+                    if (!tilesFrom.isEmpty()) {
+                        for (Map.Entry<BlockVector3, CompoundTag> entry : tilesFrom.entrySet()) {
+                            BlockVector3 pos = entry.getKey();
+                            BlockState fromBlock = get.getBlock(pos.getX() & 15, pos.getY(), pos.getZ() & 15);
+                            BlockState toBlock = set.getBlock(pos.getX() & 15, pos.getY(), pos.getZ() & 15);
+                            if (fromBlock != toBlock || tilesTo.containsKey(pos)) {
+                                addTileRemove(entry.getValue());
+                            }
                         }
-                        int combinedTo = blocksSet[index];
-                        if (combinedTo != 0) {
-                            add(xx, yy, zz, combinedFrom, combinedTo);
+                    }
+                    if (!tilesTo.isEmpty()) {
+                        for (Map.Entry<BlockVector3, CompoundTag> entry : tilesTo.entrySet()) {
+                            addTileCreate(entry.getValue());
+                        }
+                    }
+                    Set<UUID> entRemoves = set.getEntityRemoves();
+                    if (!entRemoves.isEmpty()) {
+                        for (UUID uuid : entRemoves) {
+                            CompoundTag found = get.getEntity(uuid);
+                            if (found != null) {
+                                addEntityRemove(found);
+                            }
+                        }
+                    }
+                    Set<CompoundTag> ents = set.getEntities();
+                    if (!ents.isEmpty()) {
+                        for (CompoundTag tag : ents) {
+                            addEntityCreate(tag);
+                        }
+                    }
+                    for (int layer = 0; layer < 16; layer++) {
+                        if (!set.hasSection(layer))
+                            continue;
+                        // add each block and tile
+                        char[] blocksGet = get.load(layer);
+                        if (blocksGet == null) {
+                            blocksGet = FaweCache.IMP.EMPTY_CHAR_4096;
+                        }
+                        char[] blocksSet = set.load(layer);
+
+                        int by = layer << 4;
+                        for (int y = 0, index = 0; y < 16; y++) {
+                            int yy = y + by;
+                            for (int z = 0; z < 16; z++) {
+                                int zz = z + bz;
+                                for (int x = 0; x < 16; x++, index++) {
+                                    int xx = bx + x;
+                                    int combinedFrom = blocksGet[index];
+                                    if (combinedFrom == 0) {
+                                        combinedFrom = BlockID.AIR;
+                                    }
+                                    int combinedTo = blocksSet[index];
+                                    if (combinedTo != 0) {
+                                        add(xx, yy, zz, combinedFrom, combinedTo);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    BiomeType[] biomes = set.getBiomes();
+                    if (biomes != null) {
+                        for (int z = 0, index = 0; z < 16; z++) {
+                            for (int x = 0; x < 16; x++, index++) {
+                                BiomeType newBiome = biomes[index];
+                                if (newBiome != null) {
+                                    BiomeType oldBiome = get.getBiomeType(x, 0, z);
+                                    if (oldBiome != newBiome) {
+                                        addBiomeChange(bx + x, bz + z, oldBiome, newBiome);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
             }
+        };
+        if (waitForWrite) {
+            run.run();
+        } else {
+            addWriteTask(run);
         }
-
-        BiomeType[] biomes = set.getBiomes();
-        if (biomes != null) {
-            for (int z = 0, index = 0; z < 16; z++) {
-                for (int x = 0; x < 16; x++, index++) {
-                    BiomeType newBiome = biomes[index];
-                    if (newBiome != null) {
-                        BiomeType oldBiome = get.getBiomeType(x, 0, z);
-                        if (oldBiome != newBiome) {
-                            addBiomeChange(bx + x, bz + z, oldBiome, newBiome);
-                        }
-                    }
-                }
-            }
-        }
+        //We never make changes so this is safe enough
         return set;
     }
 

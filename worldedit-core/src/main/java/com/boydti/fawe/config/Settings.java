@@ -186,10 +186,11 @@ public class Settings extends Config {
         public boolean USE_DATABASE = true;
         @Comment({
                 "Record history with dispatching:",
-                " - Much faster as it avoids duplicate block checks",
+                " - Faster as it avoids duplicate block checks",
+                " - Safest history option as it does not send a chunk until its changes have been changed",
                 " - Slightly worse compression since dispatch order is different",
         })
-        public boolean COMBINE_STAGES = true;
+        public boolean POST_PROCESS = true;
         @Comment({
                 "Higher compression reduces the size of history at the expense of CPU",
                 "0 = Uncompressed byte array (fastest)",
@@ -386,6 +387,15 @@ public class Settings extends Config {
             "This will increase time taken slightly."
         })
         public boolean ALLOW_TICK_EXISTING = true;
+
+        @Comment({
+            "[Safe] Do not wait for history to write before sending chunks and completing an edit:",
+            " - Much much faster as it does not wait for history to be written for a chunk before sending",
+            " - Less safe as history is still being saved after the edit is complete",
+            " - Can lead to longer undo times if the history is still being written",
+            " - Requires post process history"
+        })
+        public boolean DO_NOT_WAIT_FOR_HISTORY = false;
     }
 
     public static class WEB {

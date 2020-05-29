@@ -43,7 +43,6 @@ public class RollbackOptimizedHistory extends DiskStorageHistory {
         this.maxZ = region.getMaximumZ();
         this.blockSize = (int) size;
         this.command = command;
-        this.closed = true;
         System.out.println("Size " + size);
     }
 
