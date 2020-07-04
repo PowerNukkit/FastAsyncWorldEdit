@@ -45,7 +45,7 @@ public class SweepBrush implements Brush, ResettableTool {
             return;
         }
 
-        boolean newPos = !position.equals(this.position);
+        boolean newPos = this.position == null || !position.equals(this.position);
         this.position = position;
         Player player = editSession.getPlayer();
         if (player == null) {
@@ -103,9 +103,7 @@ public class SweepBrush implements Brush, ResettableTool {
                 for (double pos = 0D; pos <= 1D; pos += step) {
                     Vector3 gradient = interpol.get1stDerivative(pos);
                     double dist = MathMan.sqrtApprox(last.distanceSq(gradient));
-                    last.mutX(gradient.getX());
-                    last.mutY(gradient.getY());
-                    last.mutZ(gradient.getZ());
+                    last.setComponents(gradient);
                     double change = dist * step;
                     // Accumulation is arbitrary, but much faster than calculation overlapping regions
                     if ((accumulation += change + step * 2) > blockDistance) {
