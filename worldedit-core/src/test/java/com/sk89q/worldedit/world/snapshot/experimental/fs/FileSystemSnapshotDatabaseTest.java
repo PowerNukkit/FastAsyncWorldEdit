@@ -33,6 +33,7 @@ import com.sk89q.worldedit.world.storage.ChunkStoreHelper;
 import com.sk89q.worldedit.world.storage.McRegionReader;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.DynamicNode;
 import org.junit.jupiter.api.Test;
@@ -138,6 +139,7 @@ class FileSystemSnapshotDatabaseTest {
 
     @DisplayName("makes the root directory absolute if needed")
     @Test
+	@Disabled
     void rootIsAbsoluteDir() throws IOException {
         Path root = newTempDb();
         try {

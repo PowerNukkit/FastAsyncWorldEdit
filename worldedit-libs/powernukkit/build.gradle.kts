@@ -1,0 +1,2 @@
+applyLibrariesConfiguration()
+constrainDependenciesToLibsCore()
